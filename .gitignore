@@ -1,0 +1,36 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 음성 파일들 (용량이 클 수 있으므로)
+assets/*.mp3
+assets/*.wav
+assets/*.m4a
+assets/*.flac
+assets/*.ogg
+assets/*.mp4
+assets/*.avi
+assets/*.mov
+assets/*.txt
+
+# 입출력 파일들 (필요에 따라 추가/제거) */
+output/*.txt
+
+# 시스템 파일
+.DS_Store
+Thumbs.db
+
+# IDE 관련
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 로그 파일
+*.log
+
+# 임시 파일
+*.tmp
+*.temp 

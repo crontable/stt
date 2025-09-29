@@ -1,0 +1,22 @@
+{
+  "name": "speech-to-text-converter",
+  "version": "1.0.0",
+  "description": "음성 파일을 텍스트로 변환하는 Node.js 프로그램",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "convert": "node index.js"
+  },
+  "dependencies": {
+    "nodejs-whisper": "^0.2.9",
+    "fs-extra": "^11.2.0"
+  },
+  "keywords": [
+    "speech-to-text",
+    "whisper",
+    "audio",
+    "transcription"
+  ],
+  "author": "",
+  "license": "MIT"
+}
