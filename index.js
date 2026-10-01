@@ -1,5 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
+const os = require('node:os');
 const { createHash, randomUUID } = require('node:crypto');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
@@ -101,6 +102,7 @@ class SpeechToTextConverter {
   }
 
   async convertToText(audioFile) {
+    let temporaryDir;
     let pendingOutputPath;
     try {
       const audioPath = path.resolve(ASSETS_DIR, audioFile);
@@ -109,11 +111,16 @@ class SpeechToTextConverter {
 
       console.log(`🔄 변환 중: ${audioFile}`);
 
-      await nodewhisper(audioPath, {
+      // 라이브러리가 WAV를 덮어쓰거나 삭제해도 원본에는 영향을 주지 않습니다.
+      temporaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'stt-'));
+      const temporaryAudioPath = path.join(temporaryDir, `source${path.extname(audioFile).toLowerCase()}`);
+      await fs.copy(audioPath, temporaryAudioPath);
+
+      await nodewhisper(temporaryAudioPath, {
         modelName: this.libraryModelName,
         // large-v3는 위에서 검증했으므로 라이브러리의 large 다운로드를 건너뜁니다.
         autoDownloadModelName: this.libraryModelName === 'large' ? undefined : this.libraryModelName,
-        removeWavFileAfterTranscription: true, // 변환 후 WAV 파일을 삭제합니다.
+        removeWavFileAfterTranscription: true, // 임시 사본의 WAV만 삭제합니다.
         withCuda: false, // CUDA를 끕니다. Apple Silicon의 Metal 사용과는 별개입니다.
         whisperOptions: {
           outputInText: true, // 텍스트 출력 활성화
@@ -130,11 +137,7 @@ class SpeechToTextConverter {
         },
       });
 
-      const extension = path.extname(audioPath).toLowerCase();
-      const wavPath = extension === '.wav'
-        ? audioPath
-        : path.join(path.dirname(audioPath), `${path.basename(audioPath, extension)}.wav`);
-      const expectedTxtFile = `${wavPath}.txt`;
+      const expectedTxtFile = path.join(temporaryDir, 'source.wav.txt');
       if (!await fs.pathExists(expectedTxtFile)) {
         throw new Error('음성 인식이 텍스트 파일을 생성하지 못했습니다.');
       }
@@ -155,7 +158,7 @@ class SpeechToTextConverter {
       return { success: false, inputFile: audioFile, error: error.message };
     } finally {
       try {
-        await Promise.all([pendingOutputPath].filter(Boolean).map((temporaryPath) => fs.remove(temporaryPath)));
+        await Promise.all([temporaryDir, pendingOutputPath].filter(Boolean).map((temporaryPath) => fs.remove(temporaryPath)));
       } catch (error) {
         console.error(`❌ ${audioFile}의 임시 파일을 정리하지 못했습니다:`, error.message);
       }

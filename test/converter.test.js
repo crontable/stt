@@ -69,11 +69,64 @@ function wavBytes(sampleRate) {
 }
 
 function transcriptPath(audioPath) {
-  const extension = path.extname(audioPath).toLowerCase();
-  return extension === '.wav'
-    ? `${audioPath}.txt`
-    : path.join(path.dirname(audioPath), `${path.basename(audioPath, extension)}.wav.txt`);
+  return path.join(path.dirname(audioPath), 'source.wav.txt');
 }
+
+test('16kHz와 44.1kHz WAV 원본은 엔진이 임시 파일을 바꾸고 삭제해도 보존된다', async () => {
+  await [16000, 44100].reduce(async (previous, sampleRate) => {
+    await previous;
+    let engineInput;
+    const originalBytes = wavBytes(sampleRate);
+
+    await withFixture(() => async (audioPath, options) => {
+      engineInput = audioPath;
+      assert.equal(path.isAbsolute(audioPath), true);
+      assert.equal(path.basename(audioPath), 'source.wav');
+      assert.deepEqual(await fs.readFile(audioPath), originalBytes);
+      assert.equal(options.whisperOptions.outputInText, true);
+      await fs.writeFile(audioPath, '엔진이 만든 변환용 WAV');
+      await fs.remove(audioPath);
+      await fs.writeFile(transcriptPath(audioPath), '한국어 전사 결과\n');
+    }, async ({ assets, output, converter }) => {
+      const originalPath = path.join(assets, 'original.wav');
+      await fs.writeFile(originalPath, originalBytes);
+
+      const result = await converter.convertToText('original.wav');
+
+      assert.equal(result.success, true);
+      assert.notEqual(engineInput, originalPath);
+      assert.deepEqual(await fs.readFile(originalPath), originalBytes);
+      assert.equal(await fs.readFile(path.join(output, 'original.txt'), 'utf8'), '한국어 전사 결과\n');
+      assert.equal(await fs.pathExists(path.dirname(engineInput)), false);
+    });
+  }, Promise.resolve());
+});
+
+test('MP3를 변환할 때 같은 이름의 원본 WAV도 보존한다', async () => {
+  const originalMp3 = Buffer.from('원본 MP3 바이트');
+  const originalWav = wavBytes(44100);
+  let engineInput;
+
+  await withFixture(() => async (audioPath) => {
+    engineInput = audioPath;
+    assert.equal(path.basename(audioPath), 'source.mp3');
+    assert.deepEqual(await fs.readFile(audioPath), originalMp3);
+    const generatedWav = path.join(path.dirname(audioPath), 'source.wav');
+    await fs.writeFile(generatedWav, '변환용 WAV');
+    await fs.remove(generatedWav);
+    await fs.writeFile(transcriptPath(audioPath), 'MP3 전사 결과');
+  }, async ({ assets, converter }) => {
+    await fs.writeFile(path.join(assets, 'meeting.mp3'), originalMp3);
+    await fs.writeFile(path.join(assets, 'meeting.wav'), originalWav);
+
+    const result = await converter.convertToText('meeting.mp3');
+
+    assert.equal(result.success, true);
+    assert.deepEqual(await fs.readFile(path.join(assets, 'meeting.mp3')), originalMp3);
+    assert.deepEqual(await fs.readFile(path.join(assets, 'meeting.wav')), originalWav);
+    assert.equal(await fs.pathExists(path.dirname(engineInput)), false);
+  });
+});
 
 test('생성된 전사 내용을 실제 output 파일에 저장한다', async () => {
   const transcription = '한국어 전사 결과입니다.\n';
@@ -110,6 +163,7 @@ test('전사 파일이 없거나 비어 있으면 실패로 반환하고 기존 
       assert.equal(typeof result.error, 'string');
       assert.ok(result.error.length > 0);
       assert.equal(await fs.readFile(previousOutput, 'utf8'), '이전에 확보한 전사');
+      assert.equal(await fs.pathExists(path.dirname(engineInput)), false);
     });
   }, Promise.resolve());
 });
@@ -133,5 +187,27 @@ test('최종 결과 파일을 교체하지 못하면 실패로 반환하고 기�
     assert.equal(result.error, '결과 파일 교체 실패');
     assert.equal(await fs.readFile(path.join(output, 'recording.txt'), 'utf8'), '기존 결과');
     assert.deepEqual(await fs.readdir(output), ['recording.txt']);
+  });
+});
+
+test('엔진 오류가 발생해도 원본을 보존하고 임시 파일을 삭제한다', async () => {
+  let engineInput;
+
+  await withFixture(({ engineDirectory }) => async (audioPath) => {
+    engineInput = audioPath;
+    throw new Error('인식 엔진 오류');
+  }, async ({ directory, assets, output, converter }) => {
+    const originalPath = path.join(assets, 'failed.wav');
+    const originalBytes = wavBytes(16000);
+    await fs.writeFile(originalPath, originalBytes);
+
+    const result = await converter.convertToText('failed.wav');
+
+    assert.equal(result.success, false);
+    assert.equal(result.error, '인식 엔진 오류');
+    assert.equal(process.cwd(), directory);
+    assert.deepEqual(await fs.readFile(originalPath), originalBytes);
+    assert.equal(await fs.pathExists(path.dirname(engineInput)), false);
+    assert.equal(await fs.pathExists(path.join(output, 'failed.txt')), false);
   });
 });
