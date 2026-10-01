@@ -7,11 +7,13 @@
   "scripts": {
     "start": "node index.js",
     "convert": "node index.js",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix --max-warnings 0",
     "test": "node --test"
   },
   "dependencies": {
-    "nodejs-whisper": "^0.2.9",
-    "fs-extra": "^11.2.0"
+    "fs-extra": "^11.2.0",
+    "nodejs-whisper": "^0.2.9"
   },
   "keywords": [
     "speech-to-text",
@@ -20,5 +22,16 @@
     "transcription"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "4.7.2",
+    "@eslint/eslintrc": "3.3.5",
+    "@eslint/js": "9.39.4",
+    "eslint": "9.39.4",
+    "eslint-config-airbnb-base": "15.0.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-sonarjs": "4.2.0",
+    "globals": "17.6.0"
+  }
 }

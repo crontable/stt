@@ -1,10 +1,10 @@
+const fs = require('fs-extra');
 const assert = require('node:assert/strict');
 const { createRequire } = require('node:module');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
-const fs = require('fs-extra');
 
 const INDEX_PATH = path.resolve(__dirname, '..', 'index.js');
 const nativeRequire = createRequire(INDEX_PATH);
@@ -352,6 +352,7 @@ test('직접 실행한 CLI는 파일 변환 실패를 종료 코드 1로 알리�
     const isolatedRequire = (name) => name === 'nodejs-whisper'
       ? { nodewhisper: async () => { throw new Error('파일 변환 실패'); } }
       : nativeRequire(name);
+    // eslint-disable-next-line no-restricted-syntax -- Node의 직접 실행 판별을 재현하기 위해 모의 require.main에 모듈을 연결합니다.
     isolatedRequire.main = cliModule;
     const captureLog = (...values) => {
       logs = [...logs, values.join(' ')];

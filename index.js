@@ -1,7 +1,7 @@
 const fs = require('fs-extra');
-const path = require('path');
-const os = require('node:os');
 const { createHash, randomUUID } = require('node:crypto');
+const os = require('node:os');
+const path = require('node:path');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { nodewhisper } = require('nodejs-whisper');
@@ -25,12 +25,13 @@ const OUTPUT_DIR = './output';
 const SUPPORTED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.mp4', '.avi', '.mov'];
 
 class SpeechToTextConverter {
-  constructor() {
-    this.modelName = process.env.WHISPER_MODEL || 'large-v3';
-    this.libraryModelName = this.modelName === 'large-v3' ? 'large' : this.modelName;
-    this.assetsDir = path.resolve(ASSETS_DIR);
-    this.outputDir = path.resolve(OUTPUT_DIR);
-  }
+  modelName = process.env.WHISPER_MODEL || 'large-v3';
+
+  libraryModelName = this.modelName === 'large-v3' ? 'large' : this.modelName;
+
+  assetsDir = path.resolve(ASSETS_DIR);
+
+  outputDir = path.resolve(OUTPUT_DIR);
 
   async prepareModel() {
     if (this.libraryModelName !== 'large') {
@@ -229,6 +230,7 @@ async function main() {
     const results = await converter.processAllFiles();
     const failedCount = results.filter((result) => !result.success).length;
     if (failedCount > 0) {
+      // eslint-disable-next-line no-restricted-syntax -- Node의 종료 상태는 process.exitCode에 기록하며 진행 중인 출력과 정리를 마친 뒤 종료합니다.
       process.exitCode = 1;
       console.error(`\n❌ ${failedCount}개 파일의 변환에 실패했습니다. 오류를 확인해 주세요.`);
       return;
@@ -238,6 +240,7 @@ async function main() {
     }
   } catch (error) {
     console.error('❌ 프로그램 실행 중 오류가 발생했습니다:', error.message);
+    // eslint-disable-next-line no-restricted-syntax -- 초기화 실패도 Node의 종료 상태로 전달하고 진행 중인 출력과 정리를 마칩니다.
     process.exitCode = 1;
   }
 }
@@ -247,4 +250,5 @@ if (require.main === module) {
   main();
 }
 
+// eslint-disable-next-line no-restricted-syntax -- 기존 CommonJS 진입점은 module.exports로 변환기를 제공하므로 모듈 경계의 대입을 유지합니다.
 module.exports = { SpeechToTextConverter };
