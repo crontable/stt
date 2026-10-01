@@ -28,6 +28,8 @@ class SpeechToTextConverter {
   constructor() {
     this.modelName = process.env.WHISPER_MODEL || 'large-v3';
     this.libraryModelName = this.modelName === 'large-v3' ? 'large' : this.modelName;
+    this.assetsDir = path.resolve(ASSETS_DIR);
+    this.outputDir = path.resolve(OUTPUT_DIR);
   }
 
   async prepareModel() {
@@ -67,13 +69,13 @@ class SpeechToTextConverter {
       await this.prepareModel();
 
       // 필요한 디렉터리 생성
-      await fs.ensureDir(ASSETS_DIR);
-      await fs.ensureDir(OUTPUT_DIR);
+      await fs.ensureDir(this.assetsDir);
+      await fs.ensureDir(this.outputDir);
 
       console.log('🎤 음성-텍스트 변환 프로그램이 시작되었습니다.');
       console.log(`🧠 Whisper 모델: ${this.libraryModelName === 'large' ? 'large-v3' : this.modelName}`);
-      console.log(`📁 음성 파일 디렉터리: ${ASSETS_DIR}`);
-      console.log(`📄 출력 디렉터리: ${OUTPUT_DIR}`);
+      console.log(`📁 음성 파일 디렉터리: ${this.assetsDir}`);
+      console.log(`📄 출력 디렉터리: ${this.outputDir}`);
     } catch (error) {
       console.error('❌ 초기화 중 오류가 발생했습니다:', error.message);
       throw error;
@@ -82,7 +84,7 @@ class SpeechToTextConverter {
 
   async getAudioFiles() {
     try {
-      const files = await fs.readdir(ASSETS_DIR);
+      const files = await fs.readdir(this.assetsDir);
       const audioFiles = files.filter((file) => {
         const ext = path.extname(file).toLowerCase();
         return SUPPORTED_EXTENSIONS.includes(ext);
@@ -97,7 +99,7 @@ class SpeechToTextConverter {
       return audioFiles;
     } catch (error) {
       console.error('❌ 파일 목록을 가져오는 중 오류가 발생했습니다:', error.message);
-      return [];
+      throw error;
     }
   }
 
@@ -105,9 +107,9 @@ class SpeechToTextConverter {
     let temporaryDir;
     let pendingOutputPath;
     try {
-      const audioPath = path.resolve(ASSETS_DIR, audioFile);
+      const audioPath = path.join(this.assetsDir, audioFile);
       const fileName = path.parse(audioFile).name;
-      const outputPath = path.resolve(OUTPUT_DIR, `${fileName}.txt`);
+      const outputPath = path.join(this.outputDir, `${fileName}.txt`);
 
       console.log(`🔄 변환 중: ${audioFile}`);
 
@@ -116,26 +118,32 @@ class SpeechToTextConverter {
       const temporaryAudioPath = path.join(temporaryDir, `source${path.extname(audioFile).toLowerCase()}`);
       await fs.copy(audioPath, temporaryAudioPath);
 
-      await nodewhisper(temporaryAudioPath, {
-        modelName: this.libraryModelName,
-        // large-v3는 위에서 검증했으므로 라이브러리의 large 다운로드를 건너뜁니다.
-        autoDownloadModelName: this.libraryModelName === 'large' ? undefined : this.libraryModelName,
-        removeWavFileAfterTranscription: true, // 임시 사본의 WAV만 삭제합니다.
-        withCuda: false, // CUDA를 끕니다. Apple Silicon의 Metal 사용과는 별개입니다.
-        whisperOptions: {
-          outputInText: true, // 텍스트 출력 활성화
-          outputInJson: false,
-          outputInSrt: false,
-          outputInVtt: false,
-          outputInCsv: false,
-          outputInLrc: false,
-          outputInWords: false,
-          translateToEnglish: false,
-          wordTimestamps: false,
-          // 이 라이브러리는 true를 별도 입력 파일로 전달하므로 옵션을 끕니다.
-          splitOnWord: false,
-        },
-      });
+      const originalCwd = process.cwd();
+      try {
+        await nodewhisper(temporaryAudioPath, {
+          modelName: this.libraryModelName,
+          // large-v3는 위에서 검증했으므로 라이브러리의 large 다운로드를 건너뜁니다.
+          autoDownloadModelName: this.libraryModelName === 'large' ? undefined : this.libraryModelName,
+          removeWavFileAfterTranscription: true, // 임시 사본의 WAV만 삭제합니다.
+          withCuda: false, // CUDA를 끕니다. Apple Silicon의 Metal 사용과는 별개입니다.
+          whisperOptions: {
+            outputInText: true, // 텍스트 출력 활성화
+            outputInJson: false,
+            outputInSrt: false,
+            outputInVtt: false,
+            outputInCsv: false,
+            outputInLrc: false,
+            outputInWords: false,
+            translateToEnglish: false,
+            wordTimestamps: false,
+            // 이 라이브러리는 true를 별도 입력 파일로 전달하므로 옵션을 끕니다.
+            splitOnWord: false,
+          },
+        });
+      } finally {
+        // 연결 라이브러리가 변경한 작업 폴더를 성공·실패 모두에서 복구합니다.
+        process.chdir(originalCwd);
+      }
 
       const expectedTxtFile = path.join(temporaryDir, 'source.wav.txt');
       if (!await fs.pathExists(expectedTxtFile)) {
@@ -147,7 +155,7 @@ class SpeechToTextConverter {
       }
 
       // 새 결과를 모두 저장한 뒤 교체하므로 저장 실패 시 기존 결과를 보존합니다.
-      pendingOutputPath = path.join(path.dirname(outputPath), `.stt-${randomUUID()}.tmp`);
+      pendingOutputPath = path.join(this.outputDir, `.stt-${randomUUID()}.tmp`);
       await fs.outputFile(pendingOutputPath, transcription, { flag: 'wx' });
       await fs.rename(pendingOutputPath, outputPath);
 
@@ -169,37 +177,47 @@ class SpeechToTextConverter {
     const audioFiles = await this.getAudioFiles();
 
     if (audioFiles.length === 0) {
-      return;
+      return [];
     }
 
     console.log(`\n📋 총 ${audioFiles.length}개의 음성 파일을 발견했습니다.`);
 
-    const results = [];
+    const outputCounts = audioFiles.reduce((counts, audioFile) => {
+      const outputFile = `${path.parse(audioFile).name}.txt`.normalize('NFC').toLowerCase();
+      return { ...counts, [outputFile]: (counts[outputFile] || 0) + 1 };
+    }, {});
 
-    for (const audioFile of audioFiles) {
+    // 라이브러리가 전역 작업 폴더를 바꾸므로 입력을 순서대로 처리합니다.
+    const results = await audioFiles.reduce(async (pendingResults, audioFile) => {
+      const previousResults = await pendingResults;
+      const outputFile = `${path.parse(audioFile).name}.txt`;
+      if (outputCounts[outputFile.normalize('NFC').toLowerCase()] > 1) {
+        return [...previousResults, {
+          success: false,
+          inputFile: audioFile,
+          error: `출력 파일 이름이 겹칩니다: ${outputFile}. 입력 파일의 이름을 서로 다르게 지정해 주세요.`,
+        }];
+      }
       const result = await this.convertToText(audioFile);
-      results.push(result);
-    }
+      return [...previousResults, result];
+    }, Promise.resolve([]));
 
     // 결과 요약
     const successful = results.filter((r) => r.success);
     const failed = results.filter((r) => !r.success);
 
-    console.log('\n📊 변환 결과:');
+    console.log('\n📊 변환 결과');
     console.log(`✅ 성공: ${successful.length}개`);
     if (failed.length > 0) {
       console.log(`❌ 실패: ${failed.length}개`);
-      failed.forEach((f) => {
-        console.log(`   - ${f.inputFile}: ${f.error}`);
-      });
+      console.log(failed.map((f) => `   - ${f.inputFile}: ${f.error}`).join('\n'));
     }
 
     if (successful.length > 0) {
-      console.log('\n📄 생성된 텍스트 파일:');
-      successful.forEach((s) => {
-        console.log(`   - ${s.outputFile}`);
-      });
+      console.log('\n📄 생성된 텍스트 파일');
+      console.log(successful.map((s) => `   - ${path.join(this.outputDir, s.outputFile)}`).join('\n'));
     }
+    return results;
   }
 }
 
@@ -208,12 +226,19 @@ async function main() {
   try {
     const converter = new SpeechToTextConverter();
     await converter.initialize();
-    await converter.processAllFiles();
-
-    console.log('\n🎉 모든 작업이 완료되었습니다!');
+    const results = await converter.processAllFiles();
+    const failedCount = results.filter((result) => !result.success).length;
+    if (failedCount > 0) {
+      process.exitCode = 1;
+      console.error(`\n❌ ${failedCount}개 파일의 변환에 실패했습니다. 오류를 확인해 주세요.`);
+      return;
+    }
+    if (results.length > 0) {
+      console.log('\n🎉 모든 파일의 변환이 완료되었습니다!');
+    }
   } catch (error) {
     console.error('❌ 프로그램 실행 중 오류가 발생했습니다:', error.message);
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 

@@ -128,16 +128,26 @@ test('MP3를 변환할 때 같은 이름의 원본 WAV도 보존한다', async (
   });
 });
 
-test('생성된 전사 내용을 실제 output 파일에 저장한다', async () => {
-  const transcription = '한국어 전사 결과입니다.\n';
-  await withFixture(() => async (audioPath) => {
+test('입력 이름과 작업 폴더가 달라도 고정 임시 경로를 쓰고 실제 output 파일을 만든다', async () => {
+  const inputName = '발언 " 검토.MP3';
+  const transcription = '첫 번째 문장입니다.\n두 번째 문장입니다.\n';
+
+  await withFixture(({ engineDirectory }) => async (audioPath) => {
+    assert.equal(path.isAbsolute(audioPath), true);
+    assert.equal(path.basename(audioPath), 'source.mp3');
     await fs.writeFile(transcriptPath(audioPath), transcription);
-  }, async ({ assets, output, converter }) => {
-    await fs.writeFile(path.join(assets, 'recording.wav'), wavBytes(16000));
-    const result = await converter.convertToText('recording.wav');
+    process.chdir(engineDirectory);
+  }, async ({ directory, assets, output, engineDirectory, converter }) => {
+    await fs.writeFile(path.join(assets, inputName), '원본 MP3');
+    process.chdir(engineDirectory);
+
+    const result = await converter.convertToText(inputName);
+
     assert.equal(result.success, true);
-    assert.equal(result.outputFile, 'recording.txt');
+    assert.equal(result.outputFile, '발언 " 검토.txt');
     assert.equal(await fs.readFile(path.join(output, result.outputFile), 'utf8'), transcription);
+    assert.equal(process.cwd(), engineDirectory);
+    assert.equal(await fs.pathExists(path.join(directory, 'assets', inputName)), true);
   });
 });
 
@@ -190,11 +200,12 @@ test('최종 결과 파일을 교체하지 못하면 실패로 반환하고 기�
   });
 });
 
-test('엔진 오류가 발생해도 원본을 보존하고 임시 파일을 삭제한다', async () => {
+test('엔진 오류가 발생해도 작업 폴더를 복구하고 임시 파일을 삭제한다', async () => {
   let engineInput;
 
   await withFixture(({ engineDirectory }) => async (audioPath) => {
     engineInput = audioPath;
+    process.chdir(engineDirectory);
     throw new Error('인식 엔진 오류');
   }, async ({ directory, assets, output, converter }) => {
     const originalPath = path.join(assets, 'failed.wav');
@@ -209,5 +220,160 @@ test('엔진 오류가 발생해도 원본을 보존하고 임시 파일을 삭�
     assert.deepEqual(await fs.readFile(originalPath), originalBytes);
     assert.equal(await fs.pathExists(path.dirname(engineInput)), false);
     assert.equal(await fs.pathExists(path.join(output, 'failed.txt')), false);
+  });
+});
+
+test('엔진이 작업 폴더를 바꾸어도 두 입력을 순서대로 처리하고 결과를 반환한다', async () => {
+  let engineInputs = [];
+
+  await withFixture(({ engineDirectory }) => async (audioPath) => {
+    assert.equal(engineInputs.length === 0 || await fs.pathExists(path.dirname(engineInputs[0])) === false, true);
+    engineInputs = [...engineInputs, audioPath];
+    const content = await fs.readFile(audioPath, 'utf8');
+    await fs.writeFile(transcriptPath(audioPath), `${content}의 전사`);
+    process.chdir(engineDirectory);
+  }, async ({ directory, assets, output, converter }) => {
+    await fs.writeFile(path.join(assets, 'a.wav'), '첫 음성');
+    await fs.writeFile(path.join(assets, 'b.mp3'), '둘째 음성');
+
+    const results = await converter.processAllFiles();
+
+    assert.equal(results.length, 2);
+    assert.deepEqual(Array.from(results, (result) => result.success), [true, true]);
+    assert.equal(engineInputs.length, 2);
+    assert.notEqual(path.dirname(engineInputs[0]), path.dirname(engineInputs[1]));
+    assert.equal(await fs.readFile(path.join(output, 'a.txt'), 'utf8'), '첫 음성의 전사');
+    assert.equal(await fs.readFile(path.join(output, 'b.txt'), 'utf8'), '둘째 음성의 전사');
+    assert.equal(process.cwd(), directory);
+    assert.deepEqual(await Promise.all(engineInputs.map((input) => fs.pathExists(path.dirname(input)))), [false, false]);
+  });
+});
+
+test('첫 입력이 실패해도 다음 입력을 처리하고 실패 정보를 반환한다', async () => {
+  await withFixture(({ engineDirectory }) => async (audioPath) => {
+    const content = await fs.readFile(audioPath, 'utf8');
+    process.chdir(engineDirectory);
+    if (content === '실패할 음성') {
+      throw new Error('첫 입력 인식 실패');
+    }
+    await fs.writeFile(transcriptPath(audioPath), '다음 입력 전사');
+  }, async ({ directory, assets, output, converter }) => {
+    await fs.writeFile(path.join(assets, 'a.wav'), '실패할 음성');
+    await fs.writeFile(path.join(assets, 'b.mp3'), '성공할 음성');
+
+    const results = await converter.processAllFiles();
+
+    assert.equal(results.length, 2);
+    assert.deepEqual(Array.from(results, (result) => result.success), [false, true]);
+    assert.equal(results[0].inputFile, 'a.wav');
+    assert.equal(results[0].error, '첫 입력 인식 실패');
+    assert.equal(await fs.pathExists(path.join(output, 'a.txt')), false);
+    assert.equal(await fs.readFile(path.join(output, 'b.txt'), 'utf8'), '다음 입력 전사');
+    assert.equal(process.cwd(), directory);
+  });
+});
+
+[
+  { description: '확장자만 다른 이름', inputNames: ['same.wav', 'same.mp3'], outputName: 'same.txt' },
+  { description: '대소문자가 다른 이름', inputNames: ['Meeting.wav', 'meeting.mp3'], outputName: 'Meeting.txt' },
+  {
+    description: '한글의 조합 형태가 다른 이름',
+    inputNames: [`${'녹음'.normalize('NFC')}.wav`, `${'녹음'.normalize('NFD')}.mp3`],
+    outputName: '녹음.txt',
+  },
+].map(({ description, inputNames, outputName }) => test(`결과 이름이 충돌하면 두 입력을 실패로 표시하고 기존 전사를 보존한다: ${description}`, async () => {
+  let engineCalls = [];
+
+  await withFixture(() => async (audioPath) => {
+    engineCalls = [...engineCalls, audioPath];
+    await fs.writeFile(transcriptPath(audioPath), '충돌하지 않는 입력의 전사');
+  }, async ({ assets, output, converter }) => {
+    await Promise.all(inputNames.map((name, index) => fs.writeFile(path.join(assets, name), `${index}번째 원본`)));
+    await fs.writeFile(path.join(assets, 'unique.wav'), '다른 원본');
+    await fs.writeFile(path.join(output, outputName), '기존 결과');
+
+    const results = await converter.processAllFiles();
+    const collisionKey = path.parse(inputNames[0]).name.normalize('NFC').toLowerCase();
+    const collisions = Array.from(results).filter((result) => path.parse(result.inputFile).name.normalize('NFC').toLowerCase() === collisionKey);
+    const successful = Array.from(results).filter((result) => result.success);
+
+    assert.equal(results.length, 3);
+    assert.equal(collisions.length, 2);
+    assert.equal(collisions.every((result) => result.success === false && typeof result.error === 'string'), true);
+    assert.equal(successful.length, 1);
+    assert.equal(successful[0].inputFile, 'unique.wav');
+    assert.equal(engineCalls.length, 1);
+    assert.equal(await fs.readFile(path.join(output, outputName), 'utf8'), '기존 결과');
+    assert.equal(await fs.readFile(path.join(output, 'unique.txt'), 'utf8'), '충돌하지 않는 입력의 전사');
+    assert.deepEqual(await Promise.all(inputNames.map((name) => fs.readFile(path.join(assets, name), 'utf8'))), ['0번째 원본', '1번째 원본']);
+  });
+}));
+
+test('입력 폴더를 읽지 못한 오류는 파일 없음으로 숨기지 않는다', async () => {
+  await withFixture(() => async () => {
+    assert.fail('폴더를 읽지 못했을 때 엔진을 실행하면 안 됩니다.');
+  }, async ({ assets, converter }) => {
+    await fs.remove(assets);
+    await assert.rejects(() => converter.getAudioFiles(), { code: 'ENOENT' });
+  });
+});
+
+test('입력 파일이 없으면 빈 처리 결과를 반환한다', async () => {
+  await withFixture(() => async () => {
+    assert.fail('입력이 없을 때 엔진을 실행하면 안 됩니다.');
+  }, async ({ converter }) => {
+    const results = await converter.processAllFiles();
+    assert.deepEqual(Array.from(results), []);
+  });
+});
+
+test('직접 실행한 CLI는 파일 변환 실패를 종료 코드 1로 알리고 전체 완료를 표시하지 않는다', async () => {
+  await withFixture(() => async () => {}, async ({ assets }) => {
+    await fs.writeFile(path.join(assets, 'failed.wav'), wavBytes(16000));
+    const cliModule = { exports: {} };
+    let logs = [];
+    let complete;
+    let rejectCompletion;
+    const completion = new Promise((resolve, reject) => {
+      complete = resolve;
+      rejectCompletion = reject;
+    });
+    const cliProcess = {
+      env: { ...process.env, WHISPER_MODEL: 'base' },
+      pid: process.pid,
+      cwd: () => process.cwd(),
+      chdir: (directory) => process.chdir(directory),
+    };
+    Object.defineProperty(cliProcess, 'exitCode', {
+      set(value) {
+        complete(value);
+      },
+    });
+    const isolatedRequire = (name) => name === 'nodejs-whisper'
+      ? { nodewhisper: async () => { throw new Error('파일 변환 실패'); } }
+      : nativeRequire(name);
+    isolatedRequire.main = cliModule;
+    const captureLog = (...values) => {
+      logs = [...logs, values.join(' ')];
+    };
+    const timeout = setTimeout(() => rejectCompletion(new Error('CLI가 실패 종료 코드를 설정하지 않았습니다.')), 3000);
+
+    try {
+      vm.runInNewContext(await fs.readFile(INDEX_PATH, 'utf8'), {
+        require: isolatedRequire,
+        module: cliModule,
+        process: cliProcess,
+        console: { log: captureLog, error: captureLog },
+        setTimeout,
+        __dirname: path.dirname(INDEX_PATH),
+        __filename: INDEX_PATH,
+      }, { filename: INDEX_PATH });
+
+      assert.equal(await completion, 1);
+      assert.match(logs.join('\n'), /실패/);
+      assert.doesNotMatch(logs.join('\n'), /모든 (?:작업이 완료|파일의 변환이 완료)/);
+    } finally {
+      clearTimeout(timeout);
+    }
   });
 });
