@@ -1,6 +1,20 @@
 const fs = require('fs-extra');
 const path = require('path');
+const { createHash } = require('node:crypto');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const { nodewhisper } = require('nodejs-whisper');
+const { MODELS_LIST, WHISPER_CPP_PATH } = require('nodejs-whisper/dist/constants');
+
+// 연결 라이브러리의 large 파일 경로에 정식 large-v3 모델을 저장합니다.
+const LARGE_V3_SHA1 = 'ad82bf6a9043ceed055076d0fd39f5f186ff8062';
+const LARGE_V3_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin';
+
+async function getModelChecksum(filePath) {
+  const checksum = createHash('sha1');
+  await pipeline(fs.createReadStream(filePath), checksum);
+  return checksum.digest('hex');
+}
 
 // 디렉터리 설정
 const ASSETS_DIR = './assets';
@@ -11,16 +25,52 @@ const SUPPORTED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.mp4', '
 
 class SpeechToTextConverter {
   constructor() {
-    // nodejs-whisper는 함수형으로 사용됩니다
+    this.modelName = process.env.WHISPER_MODEL || 'large-v3';
+    this.libraryModelName = this.modelName === 'large-v3' ? 'large' : this.modelName;
+  }
+
+  async prepareModel() {
+    if (this.libraryModelName !== 'large') {
+      return;
+    }
+
+    const modelPath = path.join(WHISPER_CPP_PATH, 'models', 'ggml-large.bin');
+    const modelExists = await fs.pathExists(modelPath);
+    if (modelExists && await getModelChecksum(modelPath) === LARGE_V3_SHA1) {
+      return;
+    }
+
+    console.log('📥 정식 large-v3 모델을 다운로드합니다. 파일 크기는 약 3.1GB입니다.');
+    const downloadPath = `${modelPath}.${process.pid}.download`;
+    try {
+      const response = await fetch(LARGE_V3_URL);
+      if (!response.ok) {
+        throw new Error(`large-v3 모델 다운로드에 실패했습니다. HTTP 상태 코드: ${response.status}`);
+      }
+      await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(downloadPath));
+      if (await getModelChecksum(downloadPath) !== LARGE_V3_SHA1) {
+        throw new Error('large-v3 모델 파일의 검증값이 일치하지 않습니다. 다시 실행하면 재다운로드합니다.');
+      }
+      await fs.rename(downloadPath, modelPath);
+      console.log('✅ large-v3 모델 다운로드와 파일 검증을 완료했습니다.');
+    } finally {
+      await fs.remove(downloadPath);
+    }
   }
 
   async initialize() {
     try {
+      if (!MODELS_LIST.includes(this.libraryModelName)) {
+        throw new Error(`지원하지 않는 Whisper 모델입니다: ${this.modelName}. 사용 가능한 모델: ${[...MODELS_LIST, 'large-v3'].join(', ')}`);
+      }
+      await this.prepareModel();
+
       // 필요한 디렉터리 생성
       await fs.ensureDir(ASSETS_DIR);
       await fs.ensureDir(OUTPUT_DIR);
 
       console.log('🎤 음성-텍스트 변환 프로그램이 시작되었습니다.');
+      console.log(`🧠 Whisper 모델: ${this.libraryModelName === 'large' ? 'large-v3' : this.modelName}`);
       console.log(`📁 음성 파일 디렉터리: ${ASSETS_DIR}`);
       console.log(`📄 출력 디렉터리: ${OUTPUT_DIR}`);
     } catch (error) {
@@ -63,10 +113,11 @@ class SpeechToTextConverter {
 
       // nodejs-whisper를 사용하여 음성을 텍스트로 변환
       await nodewhisper(audioPath, {
-        modelName: 'base', // tiny, base, small, medium, large 중 선택
-        autoDownloadModelName: 'base', // 모델이 없으면 자동 다운로드
+        modelName: this.libraryModelName,
+        // large-v3는 위에서 검증했으므로 라이브러리의 large 다운로드를 건너뜁니다.
+        autoDownloadModelName: this.libraryModelName === 'large' ? undefined : this.libraryModelName,
         removeWavFileAfterTranscription: true, // 변환 후 wav 파일 삭제 (설정 유지)
-        withCuda: false, // GPU 사용 안함 (CPU만 사용)
+        withCuda: false, // CUDA를 끕니다. Apple Silicon의 Metal 사용과는 별개입니다.
         whisperOptions: {
           outputInText: true, // 텍스트 출력 활성화
           outputInJson: false,
@@ -77,7 +128,8 @@ class SpeechToTextConverter {
           outputInWords: false,
           translateToEnglish: false,
           wordTimestamps: false,
-          splitOnWord: true,
+          // 이 라이브러리는 true를 별도 입력 파일로 전달하므로 옵션을 끕니다.
+          splitOnWord: false,
         },
       });
 
