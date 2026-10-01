@@ -21,7 +21,7 @@ OpenAI Whisper 모델을 사용하여 로컬에서 실행됩니다.
 
 ### 1. 사전 요구사항
 
-Node.js 18 이상과 FFmpeg가 필요합니다. Node.js는 프로그램 실행과 모델 다운로드에, FFmpeg는 음성 형식 변환에 사용합니다.
+Node.js 18 이상, pnpm 12.5.1, FFmpeg가 필요합니다. Node.js는 프로그램 실행과 모델 다운로드에, pnpm은 의존성 설치와 실행 명령 관리에, FFmpeg는 음성 형식 변환에 사용합니다.
 
 ```bash
 # Node.js 버전 확인
@@ -62,9 +62,28 @@ sudo yum install cmake
 
 ### 3. Node.js 의존성 설치
 
+pnpm이 없으면 macOS와 리눅스에서 아래 공식 설치 스크립트로 이 프로젝트가 사용하는 버전을 설치합니다. 설치가 끝나면 설치 도구가 안내한 대로 셸을 다시 열고 버전을 확인합니다.
+
 ```bash
-npm install
+curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=12.5.1 sh -
+pnpm --version
 ```
+
+Windows에서는 PowerShell에서 같은 버전을 지정해 설치합니다.
+
+```powershell
+$env:PNPM_VERSION = '12.5.1'
+Invoke-WebRequest https://get.pnpm.io/install.ps1 -UseBasicParsing | Invoke-Expression
+pnpm --version
+```
+
+pnpm 버전 출력이 `12.5.1`인지 확인한 뒤 저장소 최상위 폴더에서 의존성을 설치합니다. pnpm 12의 독립 설치 방식은 Node.js 없이도 설치 도구를 실행할 수 있지만, 이 프로그램을 실행하려면 Node.js가 필요합니다. 설치 방식은 [pnpm 공식 설치 안내](https://github.com/pnpm/pnpm.io/blob/main/docs/installation.md)를 따릅니다.
+
+```bash
+pnpm install --frozen-lockfile
+```
+
+`package.json`의 `packageManager`는 pnpm 버전을 지정하고, `pnpm-lock.yaml`은 의존성 버전을 기록합니다. `--frozen-lockfile`은 기록된 버전을 바꾸지 않고 설치하므로 다른 기기에서도 같은 의존성을 사용합니다. 설정과 잠금 파일이 맞지 않으면 설치를 중단합니다.
 
 ### 4. Whisper 모델 다운로드
 
@@ -75,7 +94,7 @@ cmake -S node_modules/nodejs-whisper/cpp/whisper.cpp -B node_modules/nodejs-whis
 cmake --build node_modules/nodejs-whisper/cpp/whisper.cpp/build --config Release
 
 # 최초 실행 시 정식 large-v3 모델을 자동으로 다운로드하고 검증합니다.
-npm start
+pnpm start
 ```
 
 기본 모델은 한국어 정확도를 우선하는 다국어 `large-v3`입니다. 모델 파일은 약 3.1GB이며, 최초 다운로드에는 인터넷 연결이 필요합니다. 다운로드 후 음성 인식은 로컬에서 실행됩니다.
@@ -98,7 +117,7 @@ assets/
 ### 2. 변환 실행
 
 ```bash
-npm start
+pnpm start
 # 또는
 node index.js
 ```
@@ -126,13 +145,13 @@ output/
 
 ```bash
 # 한국어 정확도를 우선하는 기본 모델
-npm start
+pnpm start
 
 # 처리 속도를 우선하는 모델
-WHISPER_MODEL=large-v3-turbo npm start
+WHISPER_MODEL=large-v3-turbo pnpm start
 
 # 이전에 사용하던 작은 모델
-WHISPER_MODEL=base npm start
+WHISPER_MODEL=base pnpm start
 ```
 
 | 모델 이름 | 언어 | 모델 파일 크기 | 용도 |
@@ -173,17 +192,17 @@ ffmpeg -version
 
 ```bash
 # large-v3 다운로드 또는 검증에 실패하면 다시 실행합니다.
-npm start
+pnpm start
 ```
 
-`large-v3`와 `large`는 매번 파일을 검증하므로, 잘못 저장된 기존 모델도 자동으로 다시 받습니다. 다른 모델의 다운로드는 연결 라이브러리가 처리합니다. `npx nodejs-whisper download`는 대화형 다운로드 도구이며 이 버전에서는 `--model` 인수를 읽지 않습니다.
+`large-v3`와 `large`는 매번 파일을 검증하므로, 잘못 저장된 기존 모델도 자동으로 다시 받습니다. 다른 모델의 다운로드는 연결 라이브러리가 처리합니다. `pnpm exec nodejs-whisper download`는 설치된 라이브러리의 대화형 다운로드 도구이며 이 버전에서는 `--model` 인수를 읽지 않습니다.
 
 ### 메모리 부족 오류
 
 실행할 모델을 더 작게 지정합니다.
 
 ```bash
-WHISPER_MODEL=base npm start
+WHISPER_MODEL=base pnpm start
 ```
 
 ## 라이선스

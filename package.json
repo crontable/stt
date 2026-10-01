@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "음성 파일을 텍스트로 변환하는 Node.js 프로그램",
   "main": "index.js",
+  "packageManager": "pnpm@12.5.1",
   "scripts": {
     "start": "node index.js",
     "convert": "node index.js",
