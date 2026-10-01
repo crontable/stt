@@ -130,10 +130,10 @@ WHISPER_MODEL=large-v3 npm start
 로그의 공백 수는 달라도 됩니다. 모델 선택 메시지만으로는 음성 인식을 확인할 수 없으므로 엔진 로그와 실제 파일을 함께 확인합니다.
 
 ```bash
-cat ./assets/large-v3-test.wav.txt
+cat ./output/large-v3-test.txt
 ```
 
-현재 실제 결과는 `assets/large-v3-test.wav.txt`입니다. 프로그램이 안내하는 `output/large-v3-test.txt`는 현재 구현이 생성하는 경로와 다릅니다. 이 절차는 안내 메시지 대신 실제 파일을 확인합니다.
+실제 결과는 `output/large-v3-test.txt`입니다. 인식 엔진이 텍스트를 생성하지 않았거나 텍스트가 비어 있거나 결과 저장에 실패하면 변환 실패로 표시하며 기존 결과 파일은 보존됩니다.
 
 이번 변경은 Apple Silicon macOS에서 정식 모델의 검증값, Metal 실행, 한국어 자동 감지, 생성된 한국어 텍스트를 확인했습니다. 새 기기의 성공 여부는 위 엔진 로그와 실제 결과 파일로 판단합니다.
 

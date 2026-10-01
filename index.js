@@ -1,6 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { nodewhisper } = require('nodejs-whisper');
@@ -101,22 +101,19 @@ class SpeechToTextConverter {
   }
 
   async convertToText(audioFile) {
+    let pendingOutputPath;
     try {
       const audioPath = path.resolve(ASSETS_DIR, audioFile);
       const fileName = path.parse(audioFile).name;
-      const outputPath = path.join(OUTPUT_DIR, `${fileName}.txt`);
+      const outputPath = path.resolve(OUTPUT_DIR, `${fileName}.txt`);
 
       console.log(`🔄 변환 중: ${audioFile}`);
 
-      // 텍스트 파일이 생성될 경로 미리 계산
-      const expectedTxtFile = path.join(OUTPUT_DIR, `${fileName}.wav.txt`);
-
-      // nodejs-whisper를 사용하여 음성을 텍스트로 변환
       await nodewhisper(audioPath, {
         modelName: this.libraryModelName,
         // large-v3는 위에서 검증했으므로 라이브러리의 large 다운로드를 건너뜁니다.
         autoDownloadModelName: this.libraryModelName === 'large' ? undefined : this.libraryModelName,
-        removeWavFileAfterTranscription: true, // 변환 후 wav 파일 삭제 (설정 유지)
+        removeWavFileAfterTranscription: true, // 변환 후 WAV 파일을 삭제합니다.
         withCuda: false, // CUDA를 끕니다. Apple Silicon의 Metal 사용과는 별개입니다.
         whisperOptions: {
           outputInText: true, // 텍스트 출력 활성화
@@ -133,14 +130,35 @@ class SpeechToTextConverter {
         },
       });
 
-      // 잠시 대기 후 텍스트 파일 확인 (파일 시스템 동기화 대기)
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const extension = path.extname(audioPath).toLowerCase();
+      const wavPath = extension === '.wav'
+        ? audioPath
+        : path.join(path.dirname(audioPath), `${path.basename(audioPath, extension)}.wav`);
+      const expectedTxtFile = `${wavPath}.txt`;
+      if (!await fs.pathExists(expectedTxtFile)) {
+        throw new Error('음성 인식이 텍스트 파일을 생성하지 못했습니다.');
+      }
+      const transcription = await fs.readFile(expectedTxtFile, 'utf8');
+      if (transcription.trim().length === 0) {
+        throw new Error('생성된 텍스트 파일이 비어 있습니다.');
+      }
 
-      console.log(`✅ 변환 완료: ${audioFile} -> ${fileName}.txt`);
+      // 새 결과를 모두 저장한 뒤 교체하므로 저장 실패 시 기존 결과를 보존합니다.
+      pendingOutputPath = path.join(path.dirname(outputPath), `.stt-${randomUUID()}.tmp`);
+      await fs.outputFile(pendingOutputPath, transcription, { flag: 'wx' });
+      await fs.rename(pendingOutputPath, outputPath);
+
+      console.log(`✅ 변환 완료: ${audioFile} -> ${outputPath}`);
       return { success: true, inputFile: audioFile, outputFile: `${fileName}.txt` };
     } catch (error) {
       console.error(`❌ ${audioFile} 변환 중 오류:`, error.message);
       return { success: false, inputFile: audioFile, error: error.message };
+    } finally {
+      try {
+        await Promise.all([pendingOutputPath].filter(Boolean).map((temporaryPath) => fs.remove(temporaryPath)));
+      } catch (error) {
+        console.error(`❌ ${audioFile}의 임시 파일을 정리하지 못했습니다:`, error.message);
+      }
     }
   }
 
