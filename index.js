@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
+const { parseArgs } = require('node:util');
 const { nodewhisper } = require('nodejs-whisper');
 const { MODELS_LIST, WHISPER_CPP_PATH } = require('nodejs-whisper/dist/constants');
 
@@ -83,16 +84,35 @@ class SpeechToTextConverter {
     }
   }
 
-  async getAudioFiles() {
+  async getInputFiles(inputPath) {
+    if (inputPath.length === 0) {
+      throw new Error('--input에 파일 또는 폴더 경로를 지정해 주세요.');
+    }
+    const resolvedPath = path.resolve(inputPath);
+    const inputInfo = await fs.stat(resolvedPath);
+    if (inputInfo.isFile()) {
+      if (!SUPPORTED_EXTENSIONS.includes(path.extname(resolvedPath).toLowerCase())) {
+        throw new Error(`지원하지 않는 입력 파일 형식입니다: ${resolvedPath}. 지원 형식: ${SUPPORTED_EXTENSIONS.join(', ')}`);
+      }
+      return [resolvedPath];
+    }
+    if (!inputInfo.isDirectory()) {
+      throw new Error(`입력 경로는 파일 또는 폴더여야 합니다: ${resolvedPath}`);
+    }
+    const files = await this.getAudioFiles(resolvedPath);
+    return files.map((file) => path.join(resolvedPath, file));
+  }
+
+  async getAudioFiles(directory = this.assetsDir) {
     try {
-      const files = await fs.readdir(this.assetsDir);
+      const files = await fs.readdir(directory, { withFileTypes: true });
       const audioFiles = files.filter((file) => {
-        const ext = path.extname(file).toLowerCase();
-        return SUPPORTED_EXTENSIONS.includes(ext);
-      });
+        const ext = path.extname(file.name).toLowerCase();
+        return (file.isFile() || file.isSymbolicLink()) && SUPPORTED_EXTENSIONS.includes(ext);
+      }).map((file) => file.name);
 
       if (audioFiles.length === 0) {
-        console.log('⚠️  assets/ 디렉터리에 음성 파일이 없습니다.');
+        console.log(`⚠️  ${directory} 디렉터리에 음성 파일이 없습니다.`);
         console.log(`지원되는 파일 형식: ${SUPPORTED_EXTENSIONS.join(', ')}`);
         return [];
       }
@@ -108,7 +128,7 @@ class SpeechToTextConverter {
     let temporaryDir;
     let pendingOutputPath;
     try {
-      const audioPath = path.join(this.assetsDir, audioFile);
+      const audioPath = path.resolve(this.assetsDir, audioFile);
       const fileName = path.parse(audioFile).name;
       const outputPath = path.join(this.outputDir, `${fileName}.txt`);
 
@@ -174,8 +194,8 @@ class SpeechToTextConverter {
     }
   }
 
-  async processAllFiles() {
-    const audioFiles = await this.getAudioFiles();
+  async processAllFiles(inputFiles) {
+    const audioFiles = inputFiles ?? await this.getAudioFiles();
 
     if (audioFiles.length === 0) {
       return [];
@@ -225,9 +245,28 @@ class SpeechToTextConverter {
 // 메인 실행 함수
 async function main() {
   try {
+    const { values } = parseArgs({
+      args: process.argv.slice(2),
+      options: {
+        input: { type: 'string', short: 'i' },
+        help: { type: 'boolean', short: 'h' },
+      },
+    });
+    if (values.help) {
+      console.log([
+        '사용법: pnpm start [--input <파일 또는 폴더 경로>]',
+        '  --input, -i  지정한 파일 또는 폴더의 지원 파일을 전사합니다.',
+        '  --help, -h   사용법을 표시합니다.',
+        '도움말 실행: pnpm exec node index.js --help',
+        '옵션을 생략하면 assets/의 지원 파일을 처리합니다.',
+        '상대 경로는 실행한 작업 폴더를 기준으로 해석하고 결과는 output/에 저장합니다.',
+      ].join('\n'));
+      return;
+    }
     const converter = new SpeechToTextConverter();
+    const inputFiles = values.input === undefined ? undefined : await converter.getInputFiles(values.input);
     await converter.initialize();
-    const results = await converter.processAllFiles();
+    const results = await converter.processAllFiles(inputFiles);
     const failedCount = results.filter((result) => !result.success).length;
     if (failedCount > 0) {
       // eslint-disable-next-line no-restricted-syntax -- Node의 종료 상태는 process.exitCode에 기록하며 진행 중인 출력과 정리를 마친 뒤 종료합니다.
