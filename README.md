@@ -40,7 +40,7 @@ sudo apt install ffmpeg
 
 ### 2. 추가 요구사항 설치
 
-실행 엔진을 빌드하려면 make와 CMake(프로젝트의 빌드 설정을 만드는 도구)가 필요합니다.
+실행 엔진을 빌드하려면 make와 CMake 3.24 이상(프로젝트의 빌드 설정을 만드는 도구)이 필요합니다. 아래 재설정 절차에서 사용하는 `--fresh`는 3.24부터 제공됩니다. [CMake 공식 옵션 안내](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-fresh)
 
 ```bash
 # macOS - Xcode Command Line Tools 설치 (make 포함)
@@ -85,27 +85,62 @@ pnpm install --frozen-lockfile
 
 `package.json`의 `packageManager`는 pnpm 버전을 지정하고, `pnpm-lock.yaml`은 의존성 버전을 기록합니다. `--frozen-lockfile`은 기록된 버전을 바꾸지 않고 설치하므로 다른 기기에서도 같은 의존성을 사용합니다. 설정과 잠금 파일이 맞지 않으면 설치를 중단합니다.
 
+`pnpm-workspace.yaml`은 `apps/*`와 `packages/*`를 함께 설치하고 관리할 패키지로 지정합니다. CLI와 공유 전사 패키지는 `workspace:*` 의존성으로 연결되므로 이 저장소의 코드를 사용합니다.
+
 ### 4. Whisper 모델 다운로드
 
-새로 설치한 환경에서는 먼저 아래 명령으로 음성 인식 실행 파일을 빌드합니다. 이미 실행 가능한 `whisper-cli`가 준비되어 있으면 빌드 명령은 생략합니다.
+새로 설치한 환경에서는 먼저 아래 명령으로 음성 인식 실행 파일을 빌드합니다. `STT_WHISPER_CPP`는 공유 패키지가 사용하는 엔진의 실제 설치 경로입니다. 그 경로의 `whisper-cli --help`가 정상 종료하면 빌드 명령은 생략합니다. 각 명령에서 오류가 발생하면 원인을 해결한 뒤 다음 명령을 실행합니다.
 
 ```bash
-cmake -S node_modules/nodejs-whisper/cpp/whisper.cpp -B node_modules/nodejs-whisper/cpp/whisper.cpp/build
-cmake --build node_modules/nodejs-whisper/cpp/whisper.cpp/build --config Release
+STT_WHISPER_CPP="$(node -p "require('./packages/transcription/node_modules/nodejs-whisper/dist/constants').WHISPER_CPP_PATH")"
+cmake --fresh -S "$STT_WHISPER_CPP" -B "$STT_WHISPER_CPP/build" -DCMAKE_BUILD_TYPE=Release
+cmake --build "$STT_WHISPER_CPP/build" --target clean
+cmake --build "$STT_WHISPER_CPP/build" --config Release
+"$STT_WHISPER_CPP/build/bin/whisper-cli" --help
 
 # 최초 실행 시 정식 large-v3 모델을 자동으로 다운로드하고 검증합니다.
 pnpm start
 ```
 
+기존 설치에서 패키지 위치를 바꾼 경우에는 예전 경로를 참조하는 빌드 설정과 Metal 생성물을 함께 갱신해야 합니다. 위 명령의 `--fresh`는 CMake 설정을 다시 만들고, `clean`은 기존 빌드 생성물을 정리합니다. 모델이 저장된 `models/`는 빌드 폴더 밖에 있으므로 `clean`으로 삭제되지 않습니다.
+
 기본 모델은 한국어 정확도를 우선하는 다국어 `large-v3`입니다. 모델 파일은 약 3.1GB이며, 최초 다운로드에는 인터넷 연결이 필요합니다. 다운로드 후 음성 인식은 로컬에서 실행됩니다.
 
 설치된 `nodejs-whisper` 0.2.9는 `large`라는 이름을 실제 배포 파일 이름과 다르게 연결합니다. 이 프로그램은 정식 `ggml-large-v3.bin`을 받아 라이브러리가 읽는 `ggml-large.bin` 경로에 저장합니다. 파일의 SHA1 검증값이 공식 값과 일치할 때만 적용하고, 오류 응답이나 불완전한 다운로드는 모델로 적용하지 않습니다.
+
+## 디렉터리 구성
+
+현재 CLI 앱과 공유 전사 기능을 다음과 같이 나눕니다. `apps/web`의 Next 웹 서버는 후속 단계에서 구성합니다.
+
+```text
+stt/
+├─ apps/
+│  └─ cli/
+│     ├─ package.json
+│     └─ src/index.js
+├─ packages/
+│  └─ transcription/
+│     ├─ package.json
+│     └─ src/index.js
+├─ assets/
+├─ output/
+├─ docs/
+├─ package.json
+├─ pnpm-workspace.yaml
+└─ pnpm-lock.yaml
+```
+
+| 위치 | 역할 |
+|---|---|
+| `apps/cli` | CLI 옵션을 읽고 전사 기능을 호출하며 콘솔 안내와 종료 코드를 관리합니다. |
+| `packages/transcription` | 모델 준비, 입력 탐색, 음성 인식과 결과 저장을 제공합니다. `fs-extra`와 `nodejs-whisper`는 이 패키지의 실행 의존성입니다. |
+| 저장소 최상위 | pnpm 설치·실행·검사 명령을 관리하고 기본 입력 `assets/`와 전사 결과 `output/`을 보관합니다. |
 
 ## 사용 방법
 
 ### 1. 음성 파일 준비
 
-`assets/` 디렉터리에 변환할 음성 파일을 넣습니다. 프로그램은 임시 사본을 처리하므로 입력 파일을 덮어쓰거나 삭제하지 않습니다.
+저장소 최상위의 `assets/` 디렉터리에 변환할 음성 파일을 넣습니다. CLI는 자신의 진입점에서 저장소 경로를 계산하므로 다른 작업 폴더에서 직접 실행해도 기본 입력과 결과 위치가 바뀌지 않습니다. 프로그램은 임시 사본을 처리하므로 입력 파일을 덮어쓰거나 삭제하지 않습니다.
 
 ```
 assets/
@@ -119,14 +154,14 @@ assets/
 ```bash
 pnpm start
 # 또는
-node index.js
+node apps/cli/src/index.js
 ```
 
 `assets/` 밖의 파일이나 폴더를 선택하려면 `--input` 또는 `-i` 옵션을 사용합니다. 실행 예시, 경로 해석, 결과 저장과 오류 처리는 [CLI 입력 경로 지정 방법](docs/명령줄-입력-경로-지정.md)에 설명합니다.
 
 ### 3. 결과 확인
 
-결과는 `output/이름.txt`에서 확인합니다. 실제로 생성된 텍스트가 비어 있지 않고 결과 폴더에 저장되었을 때만 성공으로 표시합니다.
+결과는 저장소 최상위의 `output/이름.txt`에서 확인합니다. 실제로 생성된 텍스트가 비어 있지 않고 결과 폴더에 저장되었을 때만 성공으로 표시합니다.
 
 ```
 output/
@@ -197,7 +232,7 @@ ffmpeg -version
 pnpm start
 ```
 
-`large-v3`와 `large`는 매번 파일을 검증하므로, 잘못 저장된 기존 모델도 자동으로 다시 받습니다. 다른 모델의 다운로드는 연결 라이브러리가 처리합니다. `pnpm exec nodejs-whisper download`는 설치된 라이브러리의 대화형 다운로드 도구이며 이 버전에서는 `--model` 인수를 읽지 않습니다.
+`large-v3`와 `large`는 매번 파일을 검증하므로, 잘못 저장된 기존 모델도 자동으로 다시 받습니다. 다른 모델의 다운로드는 연결 라이브러리가 처리합니다. `pnpm --filter @stt/transcription exec nodejs-whisper download`는 공유 패키지에 설치된 라이브러리의 대화형 다운로드 도구이며 이 버전에서는 `--model` 인수를 읽지 않습니다.
 
 ### 메모리 부족 오류
 

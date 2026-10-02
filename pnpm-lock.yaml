@@ -165,13 +165,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      fs-extra:
-        specifier: ^11.2.0
-        version: 11.3.0
-      nodejs-whisper:
-        specifier: ^0.2.9
-        version: 0.2.9
     devDependencies:
       '@eslint-community/eslint-plugin-eslint-comments':
         specifier: 4.7.2
@@ -200,6 +193,25 @@ importers:
       globals:
         specifier: 17.6.0
         version: 17.6.0
+
+  apps/cli:
+    dependencies:
+      '@stt/transcription':
+        specifier: workspace:*
+        version: link:../../packages/transcription
+    devDependencies:
+      fs-extra:
+        specifier: ^11.2.0
+        version: 11.3.0
+
+  packages/transcription:
+    dependencies:
+      fs-extra:
+        specifier: ^11.2.0
+        version: 11.3.0
+      nodejs-whisper:
+        specifier: ^0.2.9
+        version: 0.2.9
 
 packages:
 

@@ -1,0 +1,17 @@
+{
+  "name": "@stt/transcription",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CLI와 웹에서 공유하는 모델 준비·전사·결과 저장 기능",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "fs-extra": "^11.2.0",
+    "nodejs-whisper": "^0.2.9"
+  }
+}
