@@ -17,6 +17,7 @@ assets/*.txt
 
 # 입출력 파일들 (필요에 따라 추가/제거) */
 output/*.txt
+output/.stt-locks/
 
 # 시스템 파일
 .DS_Store

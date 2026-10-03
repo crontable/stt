@@ -1,6 +1,7 @@
 const fs = require('fs-extra');
 const assert = require('node:assert/strict');
 const { execFile } = require('node:child_process');
+const { EventEmitter } = require('node:events');
 const { createRequire } = require('node:module');
 const os = require('node:os');
 const path = require('node:path');
@@ -9,7 +10,7 @@ const { promisify } = require('node:util');
 const vm = require('node:vm');
 
 const CLI_PATH = path.resolve(__dirname, '..', 'src', 'index.js');
-const CONVERTER_PATH = path.resolve(__dirname, '..', '..', '..', 'packages', 'transcription', 'src', 'index.js');
+const CONVERTER_PATH = path.resolve(__dirname, '..', '..', '..', 'packages', 'transcription', 'src', 'converter.js');
 const nativeRequire = createRequire(CONVERTER_PATH);
 const executeFile = promisify(execFile);
 
@@ -85,18 +86,18 @@ async function runCli(args, nodewhisper, modelName = 'base', repositoryDirectory
   };
   const modules = { 'nodejs-whisper': { nodewhisper }, 'fs-extra': filesystem };
   const converterRequire = (name) => modules[name] || nativeRequire(name);
+  const transcriptionModule = {
+    async runTranscription(options) {
+      const converter = new converterModule.exports.SpeechToTextConverter(options);
+      const inputFiles = options.inputPath === undefined ? undefined : await converter.getInputFiles(options.inputPath);
+      await converter.initialize();
+      return converter.processAllFiles(inputFiles);
+    },
+  };
   const isolatedRequire = (name) => (name === '@stt/transcription'
-    ? converterModule.exports
+    ? transcriptionModule
     : nativeRequire(name));
   Object.defineProperty(isolatedRequire, 'main', { value: cliModule });
-  const cliProcess = {
-    argv: ['node', entryPath, ...args],
-    env: { ...process.env, WHISPER_MODEL: modelName },
-    pid: process.pid,
-    cwd: () => process.cwd(),
-    chdir: (directory) => process.chdir(directory),
-  };
-  Object.defineProperty(cliProcess, 'exitCode', { set: complete });
   const captureLog = (...values) => {
     const message = values.join(' ');
     logs = [...logs, message];
@@ -104,6 +105,16 @@ async function runCli(args, nodewhisper, modelName = 'base', repositoryDirectory
       complete(undefined);
     }
   };
+  const cliProcess = Object.assign(new EventEmitter(), {
+    argv: ['node', entryPath, ...args],
+    env: { ...process.env, WHISPER_MODEL: modelName },
+    pid: process.pid,
+    cwd: () => process.cwd(),
+    chdir: (directory) => process.chdir(directory),
+    stdout: { write: (message) => captureLog(message) },
+    stderr: { write: (message) => captureLog(message) },
+  });
+  Object.defineProperty(cliProcess, 'exitCode', { set: complete });
   const timeout = setTimeout(() => rejectCompletion(new Error('CLI가 제한 시간 안에 완료되지 않았습니다.')), 3000);
 
   try {
@@ -124,6 +135,7 @@ async function runCli(args, nodewhisper, modelName = 'base', repositoryDirectory
       module: cliModule,
       process: cliProcess,
       console: { log: captureLog, error: captureLog },
+      AbortController,
       setTimeout,
       __dirname: path.dirname(entryPath),
       __filename: entryPath,

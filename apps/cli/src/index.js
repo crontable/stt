@@ -1,4 +1,4 @@
-const { SpeechToTextConverter } = require('@stt/transcription');
+const { runTranscription } = require('@stt/transcription');
 const path = require('node:path');
 const { parseArgs } = require('node:util');
 
@@ -47,6 +47,30 @@ function printSummary(results, outputDir) {
   return failed.length;
 }
 
+async function runCliTranscription(options) {
+  const controller = new AbortController();
+  const stopForSignal = (exitCode) => {
+    // eslint-disable-next-line no-restricted-syntax -- 정리를 마친 뒤 운영체제 신호에 해당하는 CLI 종료 상태를 유지합니다.
+    process.exitCode = exitCode;
+    controller.abort();
+  };
+  const onInterrupt = () => stopForSignal(130);
+  const onTerminate = () => stopForSignal(143);
+  process.once('SIGINT', onInterrupt);
+  process.once('SIGTERM', onTerminate);
+  try {
+    return await runTranscription({
+      ...options,
+      signal: controller.signal,
+      onProgress: printProgress,
+      onLog: ({ stream, text }) => process[stream].write(text),
+    });
+  } finally {
+    process.removeListener('SIGINT', onInterrupt);
+    process.removeListener('SIGTERM', onTerminate);
+  }
+}
+
 async function main() {
   try {
     const { values } = parseArgs({
@@ -67,19 +91,17 @@ async function main() {
       ].join('\n'));
       return;
     }
-    const converter = new SpeechToTextConverter({
+    const outputDir = path.join(repositoryRoot, 'output');
+    const results = await runCliTranscription({
       assetsDir: path.join(repositoryRoot, 'assets'),
-      outputDir: path.join(repositoryRoot, 'output'),
+      outputDir,
       modelName: process.env.WHISPER_MODEL || 'large-v3',
-      onProgress: printProgress,
+      inputPath: values.input,
     });
-    const inputFiles = values.input === undefined ? undefined : await converter.getInputFiles(values.input);
-    await converter.initialize();
-    const results = await converter.processAllFiles(inputFiles);
     if (results.length === 0) {
       return;
     }
-    const failedCount = printSummary(results, converter.outputDir);
+    const failedCount = printSummary(results, outputDir);
     if (failedCount > 0) {
       // eslint-disable-next-line no-restricted-syntax -- Node의 종료 상태를 기록하고 진행 중인 출력과 정리를 마친 뒤 종료합니다.
       process.exitCode = 1;
@@ -90,7 +112,7 @@ async function main() {
   } catch (error) {
     console.error('❌ 프로그램 실행 중 오류가 발생했습니다:', error.message);
     // eslint-disable-next-line no-restricted-syntax -- 초기화 실패도 Node의 종료 상태로 전달하고 진행 중인 출력과 정리를 마칩니다.
-    process.exitCode = 1;
+    process.exitCode = error.code === 'STT_ABORTED' ? process.exitCode || 1 : 1;
   }
 }
 

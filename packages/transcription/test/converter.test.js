@@ -6,7 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-const CONVERTER_PATH = path.resolve(__dirname, '..', 'src', 'index.js');
+const CONVERTER_PATH = path.resolve(__dirname, '..', 'src', 'converter.js');
 const nativeRequire = createRequire(CONVERTER_PATH);
 
 async function loadConverter(nodewhisper, filesystem = fs, runtimeProcess = process) {
