@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
+import { createJobEvents } from './job-events.js';
 import { createWebError, publicError, validateJobId } from './responses.js';
 import { MAX_UPLOAD_BYTES, saveUpload, uploadDetails } from './upload.js';
 
@@ -29,6 +30,11 @@ function updateRecord(context, id, values) {
   }
   const record = { ...job.record, ...values, updatedAt: new Date().toISOString() };
   context.jobs.set(id, { ...job, record });
+  if (TERMINAL_STATUSES.includes(record.status)) {
+    job.events.terminal(record);
+  } else {
+    job.events.state(record);
+  }
   return record;
 }
 
@@ -55,9 +61,11 @@ function reserveJob(context, details) {
     updatedAt: now,
     statusUrl: `/api/transcriptions/${id}`,
     cancelUrl: `/api/transcriptions/${id}/cancel`,
+    eventsUrl: `/api/transcriptions/${id}/events`,
     resultUrl: null,
     error: null,
     cleanupRequired: false,
+    streamNotice: null,
   };
   const job = {
     record,
@@ -68,6 +76,10 @@ function reserveJob(context, details) {
     executionPromise: null,
     uploadGate: createUploadGate(),
     sourceCleanups: new Set(),
+    events: createJobEvents({
+      getJob: () => context.jobs.get(id).record,
+      onLimit: (streamNotice) => updateRecord(context, id, { streamNotice }),
+    }),
   };
   context.control.set('activeId', id);
   context.jobs.set(id, job);
@@ -134,6 +146,7 @@ async function transcribe(context, id) {
     modelName: job.record.model,
     signal: job.controller.signal,
     onProgress: (event) => receiveProgress(context, id, event),
+    onLog: (event) => job.events.log(event),
   });
   updateRecord(context, id, { stage: 'cleaning' });
   if (job.controller.signal.aborted) {
@@ -163,6 +176,7 @@ async function performJob(context, id) {
     reportFailure(context, id, error);
     outcome = { status: error.code === 'STT_ABORTED' ? 'cancelled' : 'failed', error };
   }
+  context.jobs.get(id).events.flush();
   return finishJob(context, id, outcome);
 }
 
@@ -266,6 +280,14 @@ async function readResult(context, id) {
   }
 }
 
+function subscribeJob(context, id, options) {
+  const job = findJob(context, id);
+  if (context.control.get('stopping')) {
+    throw createWebError('STT_WEB_SHUTTING_DOWN', 503);
+  }
+  return job.events.subscribe(options);
+}
+
 export function createJobManager({ assetsDir, outputDir, runner, maximumBytes = MAX_UPLOAD_BYTES, logger = console }) {
   const context = {
     jobs: new Map(),
@@ -278,8 +300,10 @@ export function createJobManager({ assetsDir, outputDir, runner, maximumBytes = 
     execute: (id) => executeJob(context, id),
     cancel: (id) => cancelJob(context, id),
     result: (id) => readResult(context, id),
+    subscribe: (id, options) => subscribeJob(context, id, options),
     shutdown: () => {
       context.control.set('stopping', true);
+      [...context.jobs.values()].forEach((job) => job.events.close());
       const active = context.jobs.get(context.control.get('activeId'));
       if (active) {
         active.controller.abort();

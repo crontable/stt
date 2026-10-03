@@ -2,6 +2,7 @@ import 'server-only';
 
 import path from 'node:path';
 
+import { createEventResponseTracker } from './event-responses.js';
 import { createJobManager } from './job-manager.js';
 import { runTranscription } from './transcription.js';
 
@@ -25,7 +26,9 @@ export function getJobManager() {
 export function registerJobShutdown() {
   const manager = getJobManager();
   if (!globalThis[SIGNALS_KEY]) {
+    const eventResponses = createEventResponseTracker();
     const shutdown = () => {
+      eventResponses.close();
       manager.shutdown();
     };
     process.on('SIGINT', shutdown);

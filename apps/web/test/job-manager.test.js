@@ -381,3 +381,97 @@ test('작업 식별자와 결과 파일 오류를 구분하고 재시작 시 메
   await rm(path.join(outputDir, record.id, 'input.txt'));
   await assert.rejects(manager.result(record.id), { code: 'STT_RESULT_UNAVAILABLE', status: 500 });
 });
+
+test('실제 로그의 구간을 전달하고 실행기와 파일 정리가 끝난 뒤 종료를 보낸다', async (t) => {
+  const settled = deferred();
+  const eventSent = deferred();
+  const { manager, assetsDir } = await fixture(t, {
+    runner: async ({ outputDir, onProgress, onLog }) => {
+      onProgress({ type: 'file-started' });
+      onLog({ stream: 'stdout', text: '[00:00:00.000 --> 00:00:01.000] 한국어 중간' });
+      onLog({ stream: 'stdout', text: ' 문장\n[00:00:01.000 --> 00:00:02.000] 마지막 구간' });
+      await writeFile(path.join(outputDir, 'input.txt'), '한국어 전체 결과');
+      onProgress({ type: 'file-completed' });
+      eventSent.resolve();
+      await settled.promise;
+      return [{ success: true }];
+    },
+  });
+  const record = await manager.accept(requestFile());
+  assert.equal(record.eventsUrl, `/api/transcriptions/${record.id}/events`);
+  assert.equal(record.streamNotice, null);
+  const events = [];
+  const closeReasons = [];
+  manager.subscribe(record.id, { onEvent: (event) => events.push(event), onClose: (reason) => closeReasons.push(reason) });
+  const execution = manager.execute(record.id);
+  await eventSent.promise;
+  assert.deepEqual(events.filter(({ type }) => type === 'segment').map(({ data }) => data.text), ['한국어 중간 문장']);
+  assert.equal(events.some(({ type }) => type === 'terminal'), false);
+  assert.equal((await stat(path.join(assetsDir, record.id, 'input.wav'))).size, 3);
+  settled.resolve();
+  await execution;
+  const terminal = events.at(-1);
+  assert.equal(terminal.type, 'terminal');
+  assert.equal(terminal.data.job.status, 'succeeded');
+  assert.equal(terminal.data.job.stage, 'complete');
+  assert.deepEqual(events.filter(({ type }) => type === 'segment').map(({ data }) => data.text), ['한국어 중간 문장', '마지막 구간']);
+  assert.deepEqual(closeReasons, ['terminal']);
+  await assertMissing(path.join(assetsDir, record.id));
+  assert.deepEqual(await manager.result(record.id), { text: '한국어 전체 결과', name: '한국어.txt' });
+});
+
+test('구독 중단은 전사를 유지하고 취소 요청은 구간을 보존한 채 정리 후 종료한다', async (t) => {
+  const started = deferred();
+  const settled = deferred();
+  const { manager } = await fixture(t, {
+    runner: async ({ signal, onLog }) => {
+      onLog({ stream: 'stdout', text: '[00:00:00.000 --> 00:00:01.000] 취소 전 문장\n' });
+      started.resolve(signal);
+      await settled.promise;
+      throw Object.assign(new Error('취소 요청'), { code: 'STT_ABORTED' });
+    },
+  });
+  const record = await manager.accept(requestFile());
+  const unsubscribe = manager.subscribe(record.id, { onEvent: () => {} });
+  const execution = manager.execute(record.id);
+  const signal = await started.promise;
+  unsubscribe();
+  assert.equal(signal.aborted, false);
+  const restored = [];
+  manager.subscribe(record.id, { onEvent: (event) => restored.push(event) });
+  assert.deepEqual(restored[0].data.segments.map(({ text }) => text), ['취소 전 문장']);
+  manager.cancel(record.id);
+  assert.equal(signal.aborted, true);
+  assert.equal(restored.some(({ type }) => type === 'terminal'), false);
+  settled.resolve();
+  await execution;
+  assert.equal(restored.at(-1).type, 'terminal');
+  assert.equal(restored.at(-1).data.job.status, 'cancelled');
+});
+
+test('서버 종료가 기존 구독을 먼저 닫고 새 구독은 503으로 거절한다', async (t) => {
+  const started = deferred();
+  const settled = deferred();
+  const { manager } = await fixture(t, {
+    runner: async ({ signal }) => {
+      started.resolve(signal);
+      await settled.promise;
+      throw Object.assign(new Error('서버 종료'), { code: 'STT_ABORTED' });
+    },
+  });
+  const record = await manager.accept(requestFile());
+  const reasons = [];
+  const execution = manager.execute(record.id);
+  const signal = await started.promise;
+  manager.subscribe(record.id, { onEvent: () => {}, onClose: (reason) => reasons.push({ reason, aborted: signal.aborted }) });
+  manager.shutdown();
+  assert.deepEqual(reasons, [{ reason: 'shutdown', aborted: false }]);
+  assert.equal(signal.aborted, true);
+  assert.throws(() => manager.subscribe(record.id, { onEvent: () => {} }), { code: 'STT_WEB_SHUTTING_DOWN', status: 503 });
+  assert.throws(() => manager.subscribe('invalid', { onEvent: () => {} }), { code: 'STT_INVALID_ID', status: 400 });
+  assert.throws(() => manager.subscribe('00000000-0000-0000-0000-000000000000', { onEvent: () => {} }), { code: 'STT_JOB_NOT_FOUND', status: 404 });
+  settled.resolve();
+  await execution;
+  assert.equal(manager.get(record.id).status, 'cancelled');
+  assert.equal(reasons.length, 1);
+});
