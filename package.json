@@ -3,9 +3,15 @@
   "version": "1.0.0",
   "description": "음성 파일을 텍스트로 변환하는 Node.js 프로그램",
   "packageManager": "pnpm@12.5.1",
+  "engines": {
+    "node": "^20.16.0 || >=22.3.0"
+  },
   "scripts": {
     "start": "node apps/cli/src/index.js",
     "convert": "node apps/cli/src/index.js",
+    "dev": "pnpm --filter @stt/web dev",
+    "build": "pnpm --filter @stt/web build",
+    "web:start": "pnpm --filter @stt/web start",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix --max-warnings 0",
     "test": "pnpm -r --if-present test"
@@ -22,10 +28,13 @@
     "@eslint-community/eslint-plugin-eslint-comments": "4.7.2",
     "@eslint/eslintrc": "3.3.5",
     "@eslint/js": "9.39.4",
+    "@next/eslint-plugin-next": "16.3.8",
     "eslint": "9.39.4",
     "eslint-config-airbnb-base": "15.0.0",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-react": "7.37.5",
+    "eslint-plugin-react-hooks": "7.1.1",
     "eslint-plugin-sonarjs": "4.2.0",
     "globals": "17.6.0"
   },

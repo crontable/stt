@@ -1,9 +1,12 @@
 import { FlatCompat } from '@eslint/eslintrc';
 import js from '@eslint/js';
 import eslintComments from '@eslint-community/eslint-plugin-eslint-comments';
+import nextPlugin from '@next/eslint-plugin-next';
 // eslint-disable-next-line import/no-unresolved -- Node는 ESLint의 exports 경로를 읽지만 기본 import 해석기는 해당 경로를 찾지 못합니다.
 import { builtinRules } from 'eslint/use-at-your-own-risk';
 import eslintConfigPrettier from 'eslint-config-prettier';
+import react from 'eslint-plugin-react';
+import reactHooks from 'eslint-plugin-react-hooks';
 import sonarjs from 'eslint-plugin-sonarjs';
 import globals from 'globals';
 import path from 'node:path';
@@ -11,6 +14,13 @@ import { fileURLToPath } from 'node:url';
 
 const configDirectory = path.dirname(fileURLToPath(import.meta.url));
 const TEST_FILES = ['**/*.test.*'];
+const WEB_FILES = ['apps/web/**/*.{js,jsx,mjs}'];
+const webConfigs = [
+  react.configs.flat.recommended,
+  react.configs.flat['jsx-runtime'],
+  reactHooks.configs.flat.recommended,
+  nextPlugin.configs['core-web-vitals'],
+].map((config) => ({ ...config, files: WEB_FILES }));
 const compat = new FlatCompat({
   baseDirectory: configDirectory,
   recommendedConfig: js.configs.recommended,
@@ -80,11 +90,11 @@ const codeHealthRules = {
 };
 
 export default [
-  { ignores: ['**/node_modules/**', '**/dist/**', 'assets/**', 'output/**'] },
+  { ignores: ['**/node_modules/**', '**/dist/**', '**/.next/**', 'assets/**', 'output/**'] },
   ...compat.extends('airbnb-base'),
   eslintConfigPrettier,
   {
-    files: ['**/*.{js,mjs,cjs}'],
+    files: ['**/*.{js,jsx,mjs,cjs}'],
     languageOptions: {
       ecmaVersion: 'latest',
       globals: { ...globals.node },
@@ -103,7 +113,7 @@ export default [
     },
     settings: { 'import/resolver': { node: true } },
     rules: {
-      'import/extensions': ['error', 'ignorePackages', { js: 'never', mjs: 'never', cjs: 'never' }],
+      'import/extensions': ['error', 'ignorePackages', { js: 'never', jsx: 'never', mjs: 'never', cjs: 'never' }],
       'import/first': 'error',
       'import/newline-after-import': 'error',
       'import/no-duplicates': 'error',
@@ -132,6 +142,29 @@ export default [
   {
     files: ['**/*.{js,cjs}'],
     languageOptions: { sourceType: 'commonjs' },
+  },
+  // Next의 권장 방식에 따라 플러그인을 직접 연결해 Airbnb의 import 설정을 유지합니다.
+  ...webConfigs,
+  {
+    files: WEB_FILES,
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
+      sourceType: 'module',
+    },
+    settings: {
+      next: { rootDir: path.join(configDirectory, 'apps/web') },
+      react: { version: 'detect' },
+      'import/resolver': { node: { extensions: ['.js', '.jsx', '.mjs', '.json', '.node'] } },
+    },
+    rules: {
+      // Next와 lift의 설정처럼 컴포넌트 입력에는 실행 중 propTypes 검사를 요구하지 않습니다.
+      'react/prop-types': 'off',
+    },
+  },
+  {
+    // 서버 모듈은 Next와 Node의 직접 실행 검사에서 같은 ESM 경로를 사용합니다.
+    files: ['apps/web/src/server/**/*.js', 'apps/web/src/app/api/**/*.js', 'apps/web/src/instrumentation.js', 'apps/web/test/**/*.js'],
+    rules: { 'import/extensions': ['error', 'ignorePackages', { js: 'always' }] },
   },
   {
     // lift의 테스트 예외를 유지하되 선언형 규칙과 우회 사유 요구는 그대로 적용합니다.

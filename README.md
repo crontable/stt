@@ -21,7 +21,7 @@ OpenAI Whisper 모델을 사용하여 로컬에서 실행됩니다.
 
 ### 1. 사전 요구사항
 
-Node.js 18.3 이상, pnpm 12.5.1, FFmpeg가 필요합니다. Node.js는 프로그램 실행과 모델 다운로드에, pnpm은 의존성 설치와 실행 명령 관리에, FFmpeg는 음성 형식 변환에 사용합니다.
+Node.js는 20.16 이상의 20 계열 또는 22.3 이상, pnpm은 12.5.1이 필요하며, 음성 형식 변환에는 FFmpeg를 사용합니다. Node.js는 프로그램 실행과 모델 다운로드에, pnpm은 의존성 설치와 실행 명령 관리에 사용합니다. Next 서버의 원본 모듈 로더를 지원하는 Node 버전을 저장소의 실행 조건으로 지정합니다.
 
 ```bash
 # Node.js 버전 확인
@@ -110,14 +110,20 @@ pnpm start
 
 ## 디렉터리 구성
 
-현재 CLI 앱과 공유 전사 기능을 다음과 같이 나눕니다. `apps/web`의 Next 웹 서버는 후속 단계에서 구성합니다.
+현재 CLI 앱, Next 웹 서버와 공유 전사 기능을 다음과 같이 나눕니다.
 
 ```text
 stt/
 ├─ apps/
-│  └─ cli/
+│  ├─ cli/
+│  │  ├─ package.json
+│  │  └─ src/index.js
+│  └─ web/
 │     ├─ package.json
-│     └─ src/index.js
+│     ├─ next.config.mjs
+│     └─ src/
+│        ├─ app/
+│        └─ server/transcription.js
 ├─ packages/
 │  └─ transcription/
 │     ├─ package.json
@@ -133,6 +139,7 @@ stt/
 | 위치 | 역할 |
 |---|---|
 | `apps/cli` | CLI 옵션을 읽고 전사 기능을 호출하며 콘솔 안내와 종료 코드를 관리합니다. |
+| `apps/web` | Next 개발·운영 서버와 상태 확인 API를 제공합니다. 서버 전용 진입점에서 공유 전사 실행기를 가져옵니다. |
 | `packages/transcription` | 모델 준비, 입력 탐색, 음성 인식과 결과 저장을 제공합니다. 공개 실행기가 전사 전체를 별도 Node 프로세스에 맡기며, `fs-extra`와 `nodejs-whisper`는 이 패키지의 실행 의존성입니다. |
 | 저장소 최상위 | pnpm 설치·실행·검사 명령을 관리하고 기본 입력 `assets/`와 전사 결과 `output/`을 보관합니다. |
 
@@ -177,6 +184,20 @@ output/
 `meeting.mp3`와 `meeting.wav`처럼 같은 결과 이름을 만드는 입력은 덮어쓰기를 막기 위해 모두 실패로 표시합니다. 대소문자나 한글의 유니코드 표현만 다른 이름도 충돌로 처리합니다. 입력 이름을 서로 다르게 지정한 뒤 다시 실행합니다.
 
 한국어 인식 확인 절차는 [업그레이드 문서의 5단계](docs/위스퍼-대형-모델-업그레이드.md#5-한국어-음성의-사본-한-개로-인식을-확인한다)에 있습니다.
+
+## 웹 서버 실행
+
+Next 개발·운영 서버를 pnpm으로 실행합니다. 서버 전용 모듈에서 공유 전사 실행기를 가져오며, 상태 확인 API를 제공합니다. 파일 전사 화면은 후속 기능에서 연결합니다.
+
+```bash
+PORT=3998 pnpm dev
+curl --fail http://127.0.0.1:3998/api/health
+
+pnpm build
+PORT=3998 pnpm web:start
+```
+
+상태 응답은 HTTP `200`과 `{"status":"ok"}`입니다. `pnpm start`와 `pnpm convert`는 CLI 전사를 실행합니다. 상태 확인은 실제 음성 인식을 실행하지 않습니다.
 
 ## 모델 옵션
 
@@ -246,7 +267,7 @@ WHISPER_MODEL=base pnpm start
 
 ## 개발 검사
 
-ESLint는 JavaScript 코드의 오류와 코드 규약 위반을 실행 전에 검사합니다. `lift`의 루트 Airbnb 기본 규칙과 웹의 선언형 처리·코드 품질 규칙을 가져왔습니다. 설정은 저장소 최상위의 `eslint.config.mjs`에 있으며 실행 코드, 테스트, 설정 파일을 함께 검사합니다.
+ESLint는 JavaScript 코드의 오류와 코드 규약 위반을 실행 전에 검사합니다. `lift`의 루트 Airbnb 기본 규칙과 웹의 선언형 처리·코드 품질 규칙을 가져왔습니다. 설정은 저장소 최상위의 `eslint.config.mjs`에 있으며 실행 코드, 테스트, 설정 파일을 함께 검사합니다. 웹 파일에는 JSX·React·Hooks·Next 규칙을 추가하고 `.next` 생성물은 제외합니다.
 
 ```bash
 # 오류와 경고가 모두 없어야 통과합니다.

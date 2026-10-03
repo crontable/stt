@@ -1,0 +1,23 @@
+{
+  "name": "@stt/web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Next 기반 음성 전사 웹 서버",
+  "engines": {
+    "node": "^20.16.0 || >=22.3.0"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "lint": "eslint . --max-warnings 0"
+  },
+  "dependencies": {
+    "@stt/transcription": "workspace:*",
+    "next": "16.3.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "0.0.1"
+  }
+}
