@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" viewBox="0 0 120 40" role="img" aria-labelledby="stt-wave-title stt-wave-desc" style="color: #285dd8">
+  <title id="stt-wave-title">음성 파형 전사 애니메이션</title>
+  <desc id="stt-wave-desc">일곱 개의 둥근 막대가 부드럽게 움직이며 전사 처리 중임을 알립니다. 실제 음량이나 완료율을 나타내지 않습니다.</desc>
+  <style>
+    .stt-wave-bar {
+      fill: currentColor;
+      opacity: 0.76;
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: stt-wave-breathe 2s ease-in-out infinite;
+    }
+    .stt-wave-bar-1 { animation-delay: -1.2s; }
+    .stt-wave-bar-2 { animation-delay: -1s; }
+    .stt-wave-bar-3 { animation-delay: -0.8s; }
+    .stt-wave-bar-4 { animation-delay: -0.6s; }
+    .stt-wave-bar-5 { animation-delay: -0.4s; }
+    .stt-wave-bar-6 { animation-delay: -0.2s; }
+    @keyframes stt-wave-breathe {
+      0%, 100% { transform: scaleY(0.52); opacity: 0.45; }
+      45% { transform: scaleY(1); opacity: 0.95; }
+      70% { transform: scaleY(0.78); opacity: 0.76; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .stt-wave-bar { animation: none; }
+    }
+  </style>
+  <rect class="stt-wave-bar stt-wave-bar-1" x="30" y="15" width="6" height="10" rx="3" />
+  <rect class="stt-wave-bar stt-wave-bar-2" x="39" y="11" width="6" height="18" rx="3" />
+  <rect class="stt-wave-bar stt-wave-bar-3" x="48" y="7" width="6" height="26" rx="3" />
+  <rect class="stt-wave-bar stt-wave-bar-4" x="57" y="4" width="6" height="32" rx="3" />
+  <rect class="stt-wave-bar stt-wave-bar-5" x="66" y="8" width="6" height="24" rx="3" />
+  <rect class="stt-wave-bar stt-wave-bar-6" x="75" y="11" width="6" height="18" rx="3" />
+  <rect class="stt-wave-bar stt-wave-bar-7" x="84" y="15" width="6" height="10" rx="3" />
+</svg>

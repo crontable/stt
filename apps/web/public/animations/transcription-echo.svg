@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" viewBox="0 0 120 40" role="img" aria-labelledby="stt-echo-title stt-echo-desc" style="color: #285dd8">
+  <title id="stt-echo-title">소리의 잔향 전사 애니메이션</title>
+  <desc id="stt-echo-desc">중심점 주위의 작은 점들이 좌우로 번지고 서서히 잦아들며 전사 처리 중임을 알립니다. 실제 음량이나 완료율을 나타내지 않습니다.</desc>
+  <style>
+    .stt-echo-center {
+      opacity: 0.72;
+      animation: stt-echo-breathe 3.2s ease-in-out infinite;
+    }
+    .stt-echo-pair {
+      animation: stt-echo-fade 3.2s linear infinite;
+      animation-delay: var(--stt-echo-delay);
+    }
+    .stt-echo-pair-1 { --stt-echo-delay: 0s; opacity: 0.58; }
+    .stt-echo-pair-2 { --stt-echo-delay: -1.066666667s; opacity: 0.42; }
+    .stt-echo-pair-3 { --stt-echo-delay: -2.133333333s; opacity: 0.26; }
+    .stt-echo-left {
+      animation: stt-echo-spread-left 3.2s cubic-bezier(0.25, 0.5, 0.5, 1) infinite;
+      animation-delay: var(--stt-echo-delay);
+    }
+    .stt-echo-right {
+      animation: stt-echo-spread-right 3.2s cubic-bezier(0.25, 0.5, 0.5, 1) infinite;
+      animation-delay: var(--stt-echo-delay);
+    }
+    .stt-echo-near-left { transform: translateX(-12px); }
+    .stt-echo-near-right { transform: translateX(12px); }
+    .stt-echo-middle-left { transform: translateX(-22px); }
+    .stt-echo-middle-right { transform: translateX(22px); }
+    .stt-echo-far-left { transform: translateX(-32px); }
+    .stt-echo-far-right { transform: translateX(32px); }
+    @keyframes stt-echo-breathe {
+      0%, 100% { opacity: 0.72; }
+      50% { opacity: 0.92; }
+    }
+    @keyframes stt-echo-fade {
+      0%, 100% { opacity: 0; }
+      16% { opacity: 0.65; }
+      42% { opacity: 0.52; }
+      76% { opacity: 0.2; }
+      90% { opacity: 0.035; }
+    }
+    @keyframes stt-echo-spread-left {
+      0% { transform: translateX(-3px); }
+      100% { transform: translateX(-36px); }
+    }
+    @keyframes stt-echo-spread-right {
+      0% { transform: translateX(3px); }
+      100% { transform: translateX(36px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .stt-echo-center,
+      .stt-echo-pair,
+      .stt-echo-left,
+      .stt-echo-right { animation: none; }
+    }
+  </style>
+  <g fill="currentColor">
+    <circle class="stt-echo-center" cx="60" cy="20" r="2.2" />
+    <g class="stt-echo-pair stt-echo-pair-1">
+      <circle class="stt-echo-left stt-echo-near-left" cx="60" cy="20" r="1.7" />
+      <circle class="stt-echo-right stt-echo-near-right" cx="60" cy="20" r="1.7" />
+    </g>
+    <g class="stt-echo-pair stt-echo-pair-2">
+      <circle class="stt-echo-left stt-echo-middle-left" cx="60" cy="20" r="1.7" />
+      <circle class="stt-echo-right stt-echo-middle-right" cx="60" cy="20" r="1.7" />
+    </g>
+    <g class="stt-echo-pair stt-echo-pair-3">
+      <circle class="stt-echo-left stt-echo-far-left" cx="60" cy="20" r="1.7" />
+      <circle class="stt-echo-right stt-echo-far-right" cx="60" cy="20" r="1.7" />
+    </g>
+  </g>
+</svg>

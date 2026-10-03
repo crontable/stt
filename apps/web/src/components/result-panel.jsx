@@ -1,4 +1,13 @@
+import Image from 'next/image';
 import { useState } from 'react';
+
+const TRANSCRIPTION_ANIMATIONS = ['wave', 'segments', 'echo'];
+
+function animationSource(jobId) {
+  // 작업 UUID의 무작위 부분을 사용하므로 구간 갱신과 재조회에서도 같은 동작을 유지합니다.
+  const index = Number.parseInt(jobId.slice(0, 8), 16) % TRANSCRIPTION_ANIMATIONS.length;
+  return `/animations/transcription-${TRANSCRIPTION_ANIMATIONS[index]}.svg`;
+}
 
 function resultPresentation(job, text, finalReady, resultError) {
   const active = ['accepted', 'running'].includes(job.status);
@@ -10,12 +19,12 @@ function resultPresentation(job, text, finalReady, resultError) {
     { applies: job.status === 'succeeded', heading: '전사 결과 확인 중', message: '저장된 최종 결과를 읽고 있습니다. 받은 부분 텍스트는 유지합니다.' },
     { applies: true, heading: '미완료 전사 결과', message: text ? '작업이 완료되지 않았습니다. 아래 텍스트는 종료 전에 받은 부분 결과입니다.' : '작업이 끝나기 전에 받은 전사 텍스트가 없습니다.' },
   ];
-  return presentations.find(({ applies }) => applies);
+  return { ...presentations.find(({ applies }) => applies), active };
 }
 
 export default function ResultPanel({ job, text, finalReady, resultError, reset }) {
   const [copyNotice, setCopyNotice] = useState(null);
-  const { heading, message } = resultPresentation(job, text, finalReady, resultError);
+  const { heading, message, active } = resultPresentation(job, text, finalReady, resultError);
 
   async function copy() {
     if (!window.isSecureContext || !navigator.clipboard?.writeText) {
@@ -41,7 +50,10 @@ export default function ResultPanel({ job, text, finalReady, resultError, reset 
         <h2 id="result-heading">{heading}</h2>
         <span className="result-format">텍스트</span>
       </div>
-      <p id="result-status" role="status">{message}</p>
+      <p id="result-status" role="status" className={active ? 'transcription-loading' : undefined}>
+        {active && <Image src={animationSource(job.id)} width={120} height={40} alt="" unoptimized aria-hidden="true" />}
+        <span className={active ? 'visually-hidden' : undefined}>{message}</span>
+      </p>
         <form onSubmit={(event) => event.preventDefault()}>
           <label className="visually-hidden" htmlFor="transcription-result">전사된 텍스트</label>
           <textarea id="transcription-result" name="result" value={text} readOnly spellCheck={false} aria-describedby="result-status" />

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" viewBox="0 0 120 40" role="img" aria-labelledby="stt-segments-title stt-segments-desc" style="color: #285dd8">
+  <title id="stt-segments-title">전사 구간이 이어지는 애니메이션</title>
+  <desc id="stt-segments-desc">짧은 문장 줄을 차례로 강조하며 전사 처리 중임을 알립니다. 실제 구간 수나 완료율을 나타내지 않습니다.</desc>
+  <style>
+    .stt-segments-row {
+      fill: currentColor;
+      stroke: currentColor;
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      opacity: 0.44;
+      animation: stt-segments-emphasize 2.4s ease-in-out infinite;
+    }
+    .stt-segments-row-1 { animation-delay: -1.8s; }
+    .stt-segments-row-2 { animation-delay: -1.2s; opacity: 0.64; }
+    .stt-segments-row-3 { animation-delay: -0.6s; opacity: 0.9; }
+    @keyframes stt-segments-emphasize {
+      0%, 100% { opacity: 0.32; }
+      20% { opacity: 0.4; }
+      40% { opacity: 0.95; }
+      70% { opacity: 0.45; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .stt-segments-row { animation: none; }
+    }
+  </style>
+  <g class="stt-segments-row stt-segments-row-1">
+    <circle cx="23" cy="8" r="1.5" stroke="none" />
+    <path d="M31 8h25m6 0h27" fill="none" />
+  </g>
+  <g class="stt-segments-row stt-segments-row-2">
+    <circle cx="23" cy="16" r="1.5" stroke="none" />
+    <path d="M31 16h39m6 0h18" fill="none" />
+  </g>
+  <g class="stt-segments-row stt-segments-row-3">
+    <circle cx="23" cy="24" r="1.5" stroke="none" />
+    <path d="M31 24h19m6 0h34" fill="none" />
+  </g>
+  <g class="stt-segments-row stt-segments-row-4">
+    <circle cx="23" cy="32" r="1.5" stroke="none" />
+    <path d="M31 32h31m6 0h15" fill="none" />
+  </g>
+</svg>

@@ -83,6 +83,8 @@ h2 { font-size: 18px; letter-spacing: -0.025em; }
 .stage-message { margin: 22px 0 17px; font-size: 14px; }
 .job-id { margin-top: 22px; color: #788598; font-size: 11px; overflow-wrap: anywhere; }
 .result-format { color: var(--muted); font-size: 12px; }
+.transcription-loading { display: flex; justify-content: center; min-height: 40px; margin-bottom: 12px; }
+.transcription-loading img { display: block; width: 120px; height: 40px; }
 textarea { display: block; width: 100%; min-height: 250px; padding: 18px; resize: vertical; border: 1px solid var(--border); border-radius: 10px; background: #fbfcfe; color: var(--text); font-size: 15px; line-height: 1.85; overflow-wrap: anywhere; }
 .result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
 .result-actions .text-button { padding: 10px 6px; }
